@@ -1,5 +1,6 @@
 import random
 import numpy as np
+from time import perf_counter
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageChops
 
@@ -25,20 +26,18 @@ BLACK = 0
 WHITE = 255
 
 CIRCLE_START_RADIUS = 100
-CIRCLE_END_RADIUS = 4
+CIRCLE_END_RADIUS = 2
 CIRCLE_PERCENT_VARIANCE = 0.2
+EDGE_PROBABILITY_WEIGHT = 0.7  # [0, 1]
+# 1 => circle center probabilities will only choose where images are different
+# 0 => probabilities are weighted evenly over image
 
-MAX_ITERATIONS = 100_000
+MAX_ITERATIONS = 10_000
 TARGET_DIFF_PERCENT = 0
 
 SEED = 2023
 random.seed(SEED)
-
-# white starting image
-im_generated = Image.new('L', im_target.size, BLACK)
-diff_generated_init = find_img_diff_pct(im_generated, im_target)
-diff_generated = diff_generated_init
-diff_compare = diff_generated
+np.random.seed(SEED)
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
@@ -57,69 +56,103 @@ def alpha_func(x):
     return loglike(x)
 
 
-diff_list = []
-guess_diff_list = []
-good_guess_pct_list = []
+def main():
+    # blank starting image
+    im_generated = Image.new('L', im_target.size, BLACK)
+    diff_generated_init = find_img_diff_pct(im_generated, im_target)
+    diff_generated = diff_generated_init
+    diff_compare = diff_generated
 
-good_guesses = 0
-epoch = 0
-while epoch < MAX_ITERATIONS and diff_generated > TARGET_DIFF_PERCENT:
-    alpha = alpha_func(epoch / MAX_ITERATIONS)  # increases from 0 to 1
-    circle_radius_target = int(CIRCLE_START_RADIUS - (CIRCLE_START_RADIUS - CIRCLE_END_RADIUS) * alpha)
-    # circle_radius = circle_radius_target
-    circle_radius = int(random.uniform(1 - CIRCLE_PERCENT_VARIANCE, 1 + CIRCLE_PERCENT_VARIANCE) * circle_radius_target)
-    color_range_step = 1  # not implementing changing colors for now
+    num_pixles = np.ones(im_target.size).size
+    index_choice = np.arange(num_pixles)
+    blank_im = Image.new('L', im_target.size, WHITE)
 
-    circle_center_x = random.randint(0, X_MAX)
-    circle_center_y = random.randint(0, Y_MAX)
-    circle_start_point = (circle_center_x - circle_radius, circle_center_y - circle_radius)
-    circle_stop_point = (circle_center_x + circle_radius, circle_center_y + circle_radius)
+    diff_list = []
+    guess_diff_list = []
+    good_guess_pct_list = []
 
-    shape_color = random.randrange(BLACK, WHITE+1, 1)
+    good_guesses = 0
+    epoch = 0
 
-    # draw random shape
-    im_compare = ImageChops.duplicate(im_generated)
-    draw = ImageDraw.Draw(im_compare)
-    draw.ellipse((circle_start_point, circle_stop_point), fill=shape_color)
+    t0 = perf_counter()
 
-    # difference of new pic with random shape
-    diff_compare = find_img_diff_pct(im_target, im_compare)
+    while epoch < MAX_ITERATIONS and diff_generated > TARGET_DIFF_PERCENT:
+        alpha = alpha_func(epoch / MAX_ITERATIONS)  # increases from 0 to 1
+        circle_radius_target = int(CIRCLE_START_RADIUS - (CIRCLE_START_RADIUS - CIRCLE_END_RADIUS) * alpha)
+        # circle_radius = circle_radius_target
+        circle_radius = int(random.uniform(1 - CIRCLE_PERCENT_VARIANCE,
+                                           1 + CIRCLE_PERCENT_VARIANCE) * circle_radius_target)
+        color_range_step = 1  # not implementing changing colors for now
 
-    # if epoch % int(MAX_ITERATIONS / 20) == 0:
-    if epoch % 2500 == 0:
-        print(f'{epoch}: {diff_generated}, alpha: {alpha}')
+        # weighted circle start point
+        diff_im = ImageChops.difference(im_target, im_generated)
+        diff_array = np.array(ImageChops.blend(blank_im, diff_im, alpha=EDGE_PROBABILITY_WEIGHT))
+        diff_array = diff_array / diff_array.sum()
+        center_indx = np.random.choice(index_choice, p=diff_array.flatten())
+        circle_center_x = center_indx % X_MAX
+        circle_center_y = center_indx // X_MAX
 
-    if diff_compare < diff_generated:
-        im_generated = ImageChops.duplicate(im_compare)
-        diff_generated = diff_compare
-        good_guesses += 1
+        # uniform center choice
+        # circle_center_x = random.randint(0, X_MAX)
+        # circle_center_y = random.randint(0, Y_MAX)
 
-    if epoch != 0:
-        diff_list.append(diff_generated)
-        guess_diff_list.append(diff_compare)
-        good_guess_pct_list.append(good_guesses / (epoch + 1))
+        circle_start_point = (circle_center_x - circle_radius, circle_center_y - circle_radius)
+        circle_stop_point = (circle_center_x + circle_radius, circle_center_y + circle_radius)
 
-    epoch += 1
+        shape_color = random.randrange(BLACK, WHITE+1, color_range_step)
 
-print(f'{epoch}: {diff_generated}, alpha: {alpha}')
-im_generated.show()
-diff_im = ImageChops.difference(im_target, im_generated)
-ImageChops.invert(diff_im).show()
-print(f'good guesses: {good_guesses}')
-print(f'good guess percent: {good_guesses / epoch}')
+        # draw random shape
+        im_compare = ImageChops.duplicate(im_generated)
+        draw = ImageDraw.Draw(im_compare)
+        draw.ellipse((circle_start_point, circle_stop_point), fill=shape_color)
 
-x = np.arange(MAX_ITERATIONS-1)
+        # difference of new pic with random shape
+        diff_compare = find_img_diff_pct(im_target, im_compare)
 
-fig, ax = plt.subplots()
+        if epoch % int(MAX_ITERATIONS / 20) == 0:
+        # if epoch % 2500 == 0:
+            print(f'{epoch}: {diff_generated}, alpha: {alpha}')
 
-# ax.plot(x, diff_list, label='gudifference')
-ax.plot(x, good_guess_pct_list, label='correct guess %')
-ax.plot(x, guess_diff_list, label='guess difference')
+        if diff_compare < diff_generated:
+            im_generated = ImageChops.duplicate(im_compare)
+            diff_generated = diff_compare
+            good_guesses += 1
 
-ax.set_yscale('log')
-fig.legend()
+        if epoch != 0:
+            diff_list.append(diff_generated)
+            guess_diff_list.append(diff_compare)
+            good_guess_pct_list.append(good_guesses / (epoch + 1))
 
-plt.show()
+        epoch += 1
+
+    t1 = perf_counter()
+
+    print(f'{epoch}: {diff_generated}, alpha: {alpha}')
+    im_generated.show()
+    diff_im = ImageChops.difference(im_target, im_generated)
+    ImageChops.invert(diff_im).show()
+    print(f'good guesses: {good_guesses}')
+    print(f'good guess percent: {good_guesses / epoch}')
+    print(f'Total time: {round((t1 - t0) / 60, 2)} min, '
+          f'Average of {round((t1 - t0) / epoch, 5)} sec / guess')
+
+    x = np.arange(MAX_ITERATIONS-1)
+
+    fig, ax = plt.subplots()
+
+    # ax.plot(x, diff_list, label='gudifference')
+    ax.plot(x, good_guess_pct_list, label='correct guess %')
+    ax.plot(x, guess_diff_list, label='guess difference')
+
+    ax.set_yscale('log')
+    fig.legend()
+
+    plt.show()
+
+
+if __name__ == '__main__':
+    # pass
+    main()
 
 # diff = find_img_diff_pct(im, start_im)
 # print(diff)
@@ -139,10 +172,13 @@ plt.show()
 # wht = 255 # (255, 255, 255)
 # im1 = Image.new('L', sz, blk)
 # draw1 = ImageDraw.Draw(im1)
-# draw1.ellipse(((0, 0), (2, 2)), fill=10)
-# im1.show()
-# npim = np.asarray(im1)
+# draw1.ellipse(((0, 0), (2, 2)), fill=255)
+# im2 = ImageChops.blend(Image.new('L', sz, 255), im1, alpha=1)
+# # im1.show()
+# npim = np.array(im1)
 # print(npim)
+# print(np.array(im2))
+# print(npim.dtype)
 
 
 
