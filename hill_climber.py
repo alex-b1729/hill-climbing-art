@@ -103,7 +103,7 @@ class HillClimbingArtist(object):
         np.random.seed(self.seed)
 
     @property
-    def params(self):
+    def params(self) -> dict:
         return {
             'seed': self.seed
             ,'max_iterations': self.max_iterations
@@ -116,25 +116,14 @@ class HillClimbingArtist(object):
         }
 
     def export_params(self, path: str):
-        params = {
-            'seed': self.seed
-            ,'max_iterations': self.max_iterations
-            ,'target_difference_percent': self.target_difference_percent
-            ,'circle_start_radius': self.circle_start_radius
-            ,'circle_end_radius': self.circle_end_radius
-            ,'circle_percent_variance': self.circle_percent_variance
-            ,'use_edge_attraction': self.use_edge_attraction
-            ,'edge_probability_weight': self.edge_probability_weight
-        }
         with open(path, 'w') as f:
-            f.write(json.dumps(params, indent=4))
+            f.write(json.dumps(self.params, indent=4))
 
     def import_params(self, path: str):
         with open(path, 'r') as f:
             params = json.loads(f.read())
 
-        self.seed = params['seed']
-        self.set_seed(self.seed)
+        self.set_seed(params['seed'])
         self.max_iterations = params['max_iterations']
         self.target_difference_percent = params['target_difference_percent']
         self.circle_start_radius = params['circle_start_radius']
@@ -143,23 +132,25 @@ class HillClimbingArtist(object):
         self.use_edge_attraction = params['use_edge_attraction']
         self.edge_probability_weight = params['edge_probability_weight']
 
-    def save_metadata(self, path: str):
-        metadata = {
+    @property
+    def metadata(self) -> dict:
+        return {
             'path_target': self.path_target
-            ,'im_target_format': self.im_target.format
-            ,'im_target_size': self.im_target.size
-            ,'im_target_mode': self.im_target.mode
-            ,'num_pixels': self.num_pixels
-            ,'x_max': self.x_max
-            ,'y_max': self.y_max
-
-            ,'climbing_seconds': self.climbing_seconds
-            ,'generated_difference_percent': self.generate_difference_percent
-            ,'good_guesses': self.good_guesses
-            ,'iteration_epochs': self.iteration_epochs
+            , 'im_target_format': self.im_target.format
+            , 'im_target_size': self.im_target.size
+            , 'im_target_mode': self.im_target.mode
+            , 'num_pixels': self.num_pixels
+            , 'x_max': self.x_max
+            , 'y_max': self.y_max
+            , 'climbing_seconds': self.climbing_seconds
+            , 'generated_difference_percent': self.generate_difference_percent
+            , 'good_guesses': self.good_guesses
+            , 'iteration_epochs': self.iteration_epochs
         }
+
+    def save_metadata(self, path: str):
         with open(path, mode='w') as f:
-            f.write(json.dumps(metadata, indent=4))
+            f.write(json.dumps(self.metadata, indent=4))
 
     def load_target_image(self, path_target: str):
         self.im_target = Image.open(path_target)
