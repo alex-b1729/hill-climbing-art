@@ -283,7 +283,7 @@ def main():
     hca.max_iterations = 30_000
     hca.use_edge_attraction = True
     hca.set_seed(2023)
-    hca.export_params('/experimenting/jimi_on_guitar.json')
+    hca.export_params('experimenting/jimi_on_guitar.json')
     print(hca.params)
 
     hca.load_target_image(target_image_path)
