@@ -1,0 +1,16 @@
+{
+    "path_target": null,
+    "im_target_format": null,
+    "im_target_size": [
+        1280,
+        954
+    ],
+    "im_target_mode": "L",
+    "num_pixels": 1221120,
+    "x_max": 1280,
+    "y_max": 954,
+    "climbing_seconds": 407.72841087300003,
+    "generated_difference_percent": 0.07182553721174004,
+    "good_guesses": 3925,
+    "iteration_epochs": 100000
+}

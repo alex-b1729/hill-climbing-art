@@ -7,42 +7,6 @@ from time import perf_counter
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
-# def find_img_diff_pct(im1: Image.Image, im2: Image.Image) -> float:
-#     assert im1.size == im2.size
-#     num_pixles = np.zeros(im1.size).size
-#     return np.asarray(ImageChops.difference(im1, im2)).sum() / (num_pixles * 255)
-
-# target image
-target_image_path = 'images/Jimi_Hendrix_1967_uncropped.jpg'
-# target_image_path = 'images/Train_wreck_at_Montparnasse_1895.jpg'
-# target_image_path = 'images/Hindenburg_disaster.jpg'
-# target_image_path = 'images/Statue_of_Liberty_12.jpg'
-# target_image_path = 'images/pawns.jpg'
-# target_image_path = 'images/mandelbrot_close_up1.png'
-# im_target = Image.open(target_image_path).convert('L')
-# print(im_target.format, im_target.size, im_target.mode)
-# # im.show()
-#
-# X_MAX = im_target.size[0]
-# Y_MAX = im_target.size[1]
-#
-# # BLACK = 0
-# # WHITE = 255
-#
-# CIRCLE_START_RADIUS = 100
-# CIRCLE_END_RADIUS = 4
-# CIRCLE_PERCENT_VARIANCE = 0.2
-# EDGE_PROBABILITY_WEIGHT = 0.7  # [0, 1]
-# # 1 => circle center probabilities will only choose where images are different
-# # 0 => probabilities are weighted evenly over image
-#
-# MAX_ITERATIONS = 30_000
-# TARGET_DIFF_PERCENT = 0
-#
-# SEED = 2023
-# random.seed(SEED)
-# np.random.seed(SEED)
-
 
 class HillClimbingArtist(object):
     """
@@ -67,7 +31,7 @@ class HillClimbingArtist(object):
         self.max_iterations = 10_000
         self.target_difference_percent = 0
         self.start_radius = 100
-        self.end_radius = 4
+        self.end_radius = 5
         self.radius_percent_variance = 0.2
         self.alpha_func = 'loglike'
         self.alpha_stretch = 80
@@ -283,7 +247,7 @@ class HillClimbingArtist(object):
             print(f'Total time: {round(self.climbing_seconds / 60, 2)} min')
             print(f'Average of {round(self.climbing_seconds / self.iteration_epochs, 5)} sec / guess')
 
-    def plot_climb_stats(self):
+    def plot_climb_stats(self, save: bool = False, dir: str = None):
         assert self.im_generated is not None
         x = np.arange(self.max_iterations)
 
@@ -293,15 +257,27 @@ class HillClimbingArtist(object):
         ax.plot(x, self.guess_difference_list, label='guess difference')
 
         ax.set_yscale('log')
+        ax.set_xlabel('Epoch')
         fig.legend()
 
-        plt.show()
+        if save:
+            if dir is None: fname = f'{dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")}.jpg'
+            else: fname = dir
+            plt.savefig(fname)
+        else:
+            plt.show()
 
-    def save(self, dir: str, include_params: bool = True, include_metadata: bool = True):
+    def save(self, dir: str, im_name: str = None,
+             include_plot: bool = False,
+             include_params: bool = True,
+             include_metadata: bool = True):
         save_time = dt.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-        self.im_generated.save(os.path.join(dir, f'{save_time}.jpg'))
+        if im_name is not None: im_path = os.path.join(dir, f'{im_name}_{save_time}.jpg')
+        else: im_path = os.path.join(dir, f'{save_time}.jpg')
+        self.im_generated.save(im_path)
+        if include_plot: self.plot_climb_stats(save=True, dir=os.path.join(dir, f'{save_time}_climb_stats.jpg'))
         if include_params: self.export_params(os.path.join(dir, f'{save_time}_params.json'))
-        if include_metadata: self.save_metadata(os.path.join(f'{save_time}_metadata.json'))
+        if include_metadata: self.save_metadata(os.path.join(dir, f'{save_time}_metadata.json'))
 
     def sigmoid(self, x):
         return 1 / (1 + np.exp(-x))
@@ -326,10 +302,12 @@ class HillClimbingArtist(object):
 
 
 def main():
+    target_image_path = 'images/Jimi_Hendrix_1967_uncropped.jpg'
+
     hca = HillClimbingArtist()
     hca.max_iterations = 100_000
     hca.set_seed(2023)
-    print(hca.params)
+    # print(hca.params)
 
     hca.load_target_image(target_image_path)
 
@@ -338,136 +316,10 @@ def main():
     hca.im_generated.show()
     ImageChops.difference(hca.im_target, hca.im_generated).show()
 
-    # hca.save()
+    hca.save(dir='images', im_name='jimi', include_plot=True)
 
     hca.plot_climb_stats()
 
-def old_main():
-    pass
-    # blank starting image
-    # im_generated = Image.new('L', im_target.size, BLACK)
-    # diff_generated_init = find_img_diff_pct(im_generated, im_target)
-    # diff_generated = diff_generated_init
-    # diff_compare = diff_generated
-    #
-    # num_pixles = np.ones(im_target.size).size
-    # index_choice = np.arange(num_pixles)
-    # blank_im = Image.new('L', im_target.size, WHITE)
-    #
-    # diff_list = []
-    # guess_diff_list = []
-    # good_guess_pct_list = []
-    #
-    # good_guesses = 0
-    # epoch = 0
-    #
-    # t0 = perf_counter()
-    #
-    # while epoch < MAX_ITERATIONS and diff_generated > TARGET_DIFF_PERCENT:
-    #     alpha = alpha_func(epoch / MAX_ITERATIONS)  # increases from 0 to 1
-    #     circle_radius_target = int(CIRCLE_START_RADIUS - (CIRCLE_START_RADIUS - CIRCLE_END_RADIUS) * alpha)
-    #     # circle_radius = circle_radius_target
-    #     circle_radius = int(random.uniform(1 - CIRCLE_PERCENT_VARIANCE,
-    #                                        1 + CIRCLE_PERCENT_VARIANCE) * circle_radius_target)
-    #     color_range_step = 1  # not implementing changing colors for now
-    #
-    #     # weighted circle start point
-    #     # diff_im = ImageChops.difference(im_target, im_generated)
-    #     # diff_array = np.array(ImageChops.blend(blank_im, diff_im, alpha=EDGE_PROBABILITY_WEIGHT))
-    #     # diff_array = diff_array / diff_array.sum()
-    #     diff_array = np.ones(num_pixles) / num_pixles
-    #     center_indx = np.random.choice(index_choice, p=diff_array.flatten())
-    #     circle_center_x = center_indx % X_MAX
-    #     circle_center_y = center_indx // X_MAX
-    #
-    #     # uniform center choice
-    #     # circle_center_x = random.randint(0, X_MAX)
-    #     # circle_center_y = random.randint(0, Y_MAX)
-    #
-    #     circle_start_point = (circle_center_x - circle_radius, circle_center_y - circle_radius)
-    #     circle_stop_point = (circle_center_x + circle_radius, circle_center_y + circle_radius)
-    #
-    #     shape_color = random.randrange(BLACK, WHITE+1, color_range_step)
-    #
-    #     # draw random shape
-    #     im_compare = ImageChops.duplicate(im_generated)
-    #     draw = ImageDraw.Draw(im_compare)
-    #     draw.ellipse((circle_start_point, circle_stop_point), fill=shape_color)
-    #
-    #     # difference of new pic with random shape
-    #     diff_compare = find_img_diff_pct(im_target, im_compare)
-    #
-    #     if epoch % int(MAX_ITERATIONS / 20) == 0:
-    #     # if epoch % 2500 == 0:
-    #         print(f'{epoch}: {diff_generated}, alpha: {alpha}')
-    #
-    #     if diff_compare < diff_generated:
-    #         im_generated = ImageChops.duplicate(im_compare)
-    #         diff_generated = diff_compare
-    #         good_guesses += 1
-    #
-    #     if epoch != 0:
-    #         diff_list.append(diff_generated)
-    #         guess_diff_list.append(diff_compare)
-    #         good_guess_pct_list.append(good_guesses / (epoch + 1))
-    #
-    #     epoch += 1
-    #
-    # t1 = perf_counter()
-    #
-    # print(f'{epoch}: {diff_generated}, alpha: {alpha}')
-    # im_generated.show()
-    # diff_im = ImageChops.difference(im_target, im_generated)
-    # ImageChops.invert(diff_im).show()
-    # print(f'good guesses: {good_guesses}')
-    # print(f'good guess percent: {good_guesses / epoch}')
-    # print(f'Total time: {round((t1 - t0) / 60, 2)} min, '
-    #       f'Average of {round((t1 - t0) / epoch, 5)} sec / guess')
-    #
-    # x = np.arange(MAX_ITERATIONS-1)
-    #
-    # fig, ax = plt.subplots()
-    #
-    # # ax.plot(x, diff_list, label='gudifference')
-    # ax.plot(x, good_guess_pct_list, label='correct guess %')
-    # ax.plot(x, guess_diff_list, label='guess difference')
-    #
-    # ax.set_yscale('log')
-    # fig.legend()
-    #
-    # plt.show()
-
 
 if __name__ == '__main__':
-    # pass
     main()
-
-# diff = find_img_diff_pct(im, start_im)
-# print(diff)
-#
-# draw = ImageDraw.Draw(start_im)
-# draw.ellipse(((-100, -100), (100, 100)), fill=BLACK)
-#
-# diff = find_img_diff_pct(im, start_im)
-# print(diff)
-#
-# start_im.show()
-
-# ImageChops.difference(im, start_im).show()
-
-# sz = (10, 10)
-# blk = 0 #(0, 0, 0)
-# wht = 255 # (255, 255, 255)
-# im1 = Image.new('L', sz, blk)
-# draw1 = ImageDraw.Draw(im1)
-# draw1.ellipse(((0, 0), (2, 2)), fill=255)
-# im2 = ImageChops.blend(Image.new('L', sz, 255), im1, alpha=1)
-# im1.show()
-# npim = np.array(im1)
-# print(npim)
-# print(np.array(im2))
-# print(npim.dtype)
-
-
-
-
