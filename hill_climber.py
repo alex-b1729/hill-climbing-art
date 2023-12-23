@@ -1,9 +1,11 @@
+import os
 import json
 import random
 import numpy as np
+import datetime as dt
 from time import perf_counter
 import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw, ImageChops
+from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
 # def find_img_diff_pct(im1: Image.Image, im2: Image.Image) -> float:
 #     assert im1.size == im2.size
@@ -16,6 +18,7 @@ target_image_path = 'images/Jimi_Hendrix_1967_uncropped.jpg'
 # target_image_path = 'images/Hindenburg_disaster.jpg'
 # target_image_path = 'images/Statue_of_Liberty_12.jpg'
 # target_image_path = 'images/pawns.jpg'
+# target_image_path = 'images/mandelbrot_close_up1.png'
 # im_target = Image.open(target_image_path).convert('L')
 # print(im_target.format, im_target.size, im_target.mode)
 # # im.show()
@@ -40,22 +43,6 @@ target_image_path = 'images/Jimi_Hendrix_1967_uncropped.jpg'
 # random.seed(SEED)
 # np.random.seed(SEED)
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-def linear(x):
-    return x
-
-def loglike(x: float, stretch: int = 40) -> float:
-    return np.log((x * stretch) + 1) / np.log(stretch + 1)
-
-def alpha_func(x: float) -> float:
-    """x in range [0, 1] returns range [0, 1]"""
-    assert 0 <= x <= 1
-    # return linear(x)
-    # return sigmoid(x)
-    return loglike(x)
-
 
 class HillClimbingArtist(object):
     """
@@ -79,9 +66,12 @@ class HillClimbingArtist(object):
         self.set_seed()
         self.max_iterations = 10_000
         self.target_difference_percent = 0
-        self.circle_start_radius = 100
-        self.circle_end_radius = 4
-        self.circle_percent_variance = 0.2
+        self.start_radius = 100
+        self.end_radius = 4
+        self.radius_percent_variance = 0.2
+        self.alpha_func = 'loglike'
+        self.alpha_stretch = 80
+        self.shape_center_choice_method = 'uniform'
         self.use_edge_attraction = False  # whether to make shape placement more likely in more different pixels
         self.edge_probability_weight = 0.7  # ignored if self.use_edge_attraction == False
 
@@ -108,9 +98,12 @@ class HillClimbingArtist(object):
             'seed': self.seed
             ,'max_iterations': self.max_iterations
             ,'target_difference_percent': self.target_difference_percent
-            ,'circle_start_radius': self.circle_start_radius
-            ,'circle_end_radius': self.circle_end_radius
-            ,'circle_percent_variance': self.circle_percent_variance
+            ,'start_radius': self.start_radius
+            ,'end_radius': self.end_radius
+            ,'radius_percent_variance': self.radius_percent_variance
+            ,'alpha_func': self.alpha_func
+            ,'alpha_stretch': self.alpha_stretch
+            ,'shape_center_choice_method': self.shape_center_choice_method
             ,'use_edge_attraction': self.use_edge_attraction
             ,'edge_probability_weight': self.edge_probability_weight
         }
@@ -126,9 +119,12 @@ class HillClimbingArtist(object):
         self.set_seed(params['seed'])
         self.max_iterations = params['max_iterations']
         self.target_difference_percent = params['target_difference_percent']
-        self.circle_start_radius = params['circle_start_radius']
-        self.circle_end_radius = params['circle_end_radius']
-        self.circle_percent_variance = params['circle_percent_variance']
+        self.start_radius = params['start_radius']
+        self.end_radius = params['end_radius']
+        self.radius_percent_variance = params['radius_percent_variance']
+        self.alpha_func = params['alpha_func']
+        self.alpha_stretch = params['alpha_stretch']
+        self.shape_center_choice_method = params['shape_center_choice_method']
         self.use_edge_attraction = params['use_edge_attraction']
         self.edge_probability_weight = params['edge_probability_weight']
 
@@ -164,18 +160,79 @@ class HillClimbingArtist(object):
         num_pixels = np.zeros(im1.size).size
         return np.asarray(ImageChops.difference(im1, im2)).sum() / (num_pixels * 255)
 
+    def modify_im(self, im, percent_done: float) -> Image.Image:
+        """general function to return modification of im"""
+        alpha = self.alpha(percent_done,
+                           func=self.alpha_func,
+                           stretch=self.alpha_stretch)
+
+        xy = self.choose_xy(alpha, how=self.shape_center_choice_method)
+        fill_color = self.choose_color(alpha=alpha, color_mode=self.color_mode)
+
+        # draw shape
+        im_compare = ImageChops.duplicate(im)
+        draw = ImageDraw.Draw(im_compare)
+        draw.ellipse(xy=xy, fill=fill_color)
+
+        return im_compare
+
+    def choose_color(self, alpha: float, color_mode: str = 'L', color_range_step: int = 1):
+        c = None
+        if color_mode == 'L':
+            c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
+        else:
+            raise NotImplementedError(f'{color_mode} color mode not implemented')
+        return c
+
+    def choose_xy(self, alpha: float, how: str = 'uniform') -> tuple:
+        """returns xy bounding box"""
+        radius_mean = int(self.start_radius -
+                          (self.start_radius - self.end_radius) * alpha)
+        # circle_radius = circle_radius_target
+        radius = int(random.uniform(1 - self.radius_percent_variance,
+                                    1 + self.radius_percent_variance) * radius_mean)
+        start_point, stop_point = None, None
+        if how == 'uniform':
+            x = random.randint(0, self.x_max)
+            y = random.randint(0, self.y_max)
+            start_point = (x - radius, y - radius)
+            stop_point = (x + radius, y + radius)
+        elif how == 'edge_attraction':
+            self.edge_attraction()
+        else:
+            raise NotImplementedError(f'{how} xy choice not defined')
+
+        return start_point, stop_point
+
+    def edge_attraction(self):
+        raise NotImplementedError('Not supported yet')
+        # index_choice = np.arange(self.num_pixels)
+        # blank_im = Image.new('L', self.im_target.size, self.WHITE)
+
+        # # weight circle start point using difference image
+        # diff_im = ImageChops.difference(self.im_target, im_generated)
+        #
+        # # blur difference by avg circle radius
+        # diff_im = diff_im.filter(ImageFilter.BoxBlur(circle_radius_mean))
+        # diff_array = np.array(ImageChops.blend(blank_im, diff_im, alpha=self.edge_probability_weight)).flatten()
+        # diff_probs = diff_array / diff_array.sum()
+        #
+        # diff_array = np.array(ImageChops.blend(blank_im, diff_im, alpha=self.edge_probability_weight))
+        # diff_array = diff_array / diff_array.sum()
+        # center_indx = np.random.choice(index_choice, p=diff_array.flatten())
+        # circle_center_x = center_indx % self.x_max
+        # circle_center_y = center_indx // self.x_max
+
     def climb(self, print_output: bool = True):
         assert self.im_target is not None
         # blank starting image
-        im_generated = Image.new(self.color_mode, self.im_target.size, self.WHITE)
-        diff_generated_init = self.find_img_diff_pct(im_generated, self.im_target)
+        self.im_generated = Image.new(self.color_mode, self.im_target.size, self.WHITE)
+        diff_generated_init = self.find_img_diff_pct(self.im_generated, self.im_target)
         diff_generated = diff_generated_init
 
-        if self.use_edge_attraction:
-            index_choice = np.arange(self.num_pixels)
-            blank_im = Image.new('L', self.im_target.size, self.WHITE)
-
+        # print output either 20 times or at least every 2500 epochs
         print_freq = min(int(self.max_iterations / 20), 2500)
+        if print_freq == 0: print_freq = 1  # avoid div by 0 with few iterations
 
         diff_list = []
         guess_diff_list = []
@@ -187,47 +244,20 @@ class HillClimbingArtist(object):
         t0 = perf_counter()
 
         while epoch < self.max_iterations and diff_generated > self.target_difference_percent:
-            alpha = alpha_func(epoch / self.max_iterations)  # increases from 0 to 1
-            circle_radius_mean = int(self.circle_start_radius -
-                                     (self.circle_start_radius - self.circle_end_radius) * alpha)
-            # circle_radius = circle_radius_target
-            circle_radius = int(random.uniform(1 - self.circle_percent_variance,
-                                               1 + self.circle_percent_variance) * circle_radius_mean)
-            color_range_step = 1  # not implementing changing colors for now
+            percent_done = epoch / self.max_iterations
 
-            if self.use_edge_attraction:
-                # weight circle start point using difference image
-                diff_im = ImageChops.difference(self.im_target, im_generated)
-                diff_array = np.array(ImageChops.blend(blank_im, diff_im, alpha=self.edge_probability_weight))
-                diff_array = diff_array / diff_array.sum()
-                center_indx = np.random.choice(index_choice, p=diff_array.flatten())
-                circle_center_x = center_indx % self.x_max
-                circle_center_y = center_indx // self.x_max
-            else:
-                # uniform center choice
-                circle_center_x = random.randint(0, self.x_max)
-                circle_center_y = random.randint(0, self.y_max)
-
-            circle_start_point = (circle_center_x - circle_radius, circle_center_y - circle_radius)
-            circle_stop_point = (circle_center_x + circle_radius, circle_center_y + circle_radius)
-
-            shape_color = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
-
-            # draw random shape
-            im_compare = ImageChops.duplicate(im_generated)
-            draw = ImageDraw.Draw(im_compare)
-            draw.ellipse((circle_start_point, circle_stop_point), fill=shape_color)
-
+            # generate random modification
+            im_compare = self.modify_im(im=self.im_generated, percent_done=percent_done)
             # difference of new pic with random shape
             diff_compare = self.find_img_diff_pct(self.im_target, im_compare)
 
-            if epoch % print_freq == 0 and print_output:
-                print(f'{epoch}: difference {diff_generated}, alpha: {alpha}')
-
             if diff_compare < diff_generated:
-                im_generated = ImageChops.duplicate(im_compare)
+                self.im_generated = ImageChops.duplicate(im_compare)
                 diff_generated = diff_compare
                 good_guesses += 1
+
+            if epoch % print_freq == 0 and print_output:
+                print(f'{epoch}: difference {diff_generated}')
 
             epoch += 1
 
@@ -238,7 +268,6 @@ class HillClimbingArtist(object):
         t1 = perf_counter()
         self.climbing_seconds = t1 - t0
 
-        self.im_generated = im_generated
         self.generate_difference_percent = diff_generated
         self.good_guesses = good_guesses
         self.iteration_epochs = epoch
@@ -248,7 +277,7 @@ class HillClimbingArtist(object):
         self.good_guess_percent_list = good_guess_pct_list
 
         if print_output:
-            print(f'{self.iteration_epochs}: difference {self.generate_difference_percent}, alpha: {alpha}')
+            print(f'{self.iteration_epochs}: difference {self.generate_difference_percent}')
             print(f'Number of good guesses: {self.good_guesses}')
             print(f'Good guess percent: {self.good_guesses / self.iteration_epochs}')
             print(f'Total time: {round(self.climbing_seconds / 60, 2)} min')
@@ -268,13 +297,38 @@ class HillClimbingArtist(object):
 
         plt.show()
 
+    def save(self, dir: str, include_params: bool = True, include_metadata: bool = True):
+        save_time = dt.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+        self.im_generated.save(os.path.join(dir, f'{save_time}.jpg'))
+        if include_params: self.export_params(os.path.join(dir, f'{save_time}_params.json'))
+        if include_metadata: self.save_metadata(os.path.join(f'{save_time}_metadata.json'))
+
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
+
+    def linear(self, x):
+        return x
+
+    def loglike(self, x: float, stretch: int = 80) -> float:
+        return np.log((x * stretch) + 1) / np.log(stretch + 1)
+
+    def alpha(self, x: float, func: str, stretch: int = 80) -> float:
+        """x in range [0, 1] returns range [0, 1]"""
+        assert 0 <= x <= 1
+        if func == 'linear':
+            return self.linear(x)
+        elif func == 'sigmoid':
+            return self.sigmoid(x)
+        elif func == 'loglike':
+            return self.loglike(x, stretch=stretch)
+        else:
+            raise NotImplementedError(f'{func} function not yet defined')
+
 
 def main():
     hca = HillClimbingArtist()
-    hca.max_iterations = 30_000
-    hca.use_edge_attraction = True
+    hca.max_iterations = 100_000
     hca.set_seed(2023)
-    hca.export_params('experimenting/jimi_on_guitar.json')
     print(hca.params)
 
     hca.load_target_image(target_image_path)
@@ -283,6 +337,8 @@ def main():
 
     hca.im_generated.show()
     ImageChops.difference(hca.im_target, hca.im_generated).show()
+
+    # hca.save()
 
     hca.plot_climb_stats()
 
@@ -406,7 +462,7 @@ if __name__ == '__main__':
 # draw1 = ImageDraw.Draw(im1)
 # draw1.ellipse(((0, 0), (2, 2)), fill=255)
 # im2 = ImageChops.blend(Image.new('L', sz, 255), im1, alpha=1)
-# # im1.show()
+# im1.show()
 # npim = np.array(im1)
 # print(npim)
 # print(np.array(im2))
