@@ -32,8 +32,7 @@ np.random.seed(SEED)
 def find_img_diff_pct(im1: Image.Image, im2: Image.Image) -> float:
     """finds difference between images and returns float in [0, 1] where 0 for same image"""
     assert im1.size == im2.size
-    num_pixels = np.zeros(im1.size).size
-    return np.asarray(ImageChops.difference(im1, im2)).sum() / (num_pixels * WHITE)
+    return np.asarray(ImageChops.difference(im1, im2)).mean() / WHITE
 
 
 def loglike(x: float, stretch: int = 40) -> float:

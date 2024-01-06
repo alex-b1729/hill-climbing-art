@@ -122,7 +122,7 @@ class HillClimbingArtist(object):
     def find_img_diff_pct(self, im1: Image.Image, im2: Image.Image) -> float:
         assert im1.size == im2.size
         num_pixels = np.zeros(im1.size).size
-        return np.asarray(ImageChops.difference(im1, im2)).sum() / (num_pixels * 255)
+        return np.asarray(ImageChops.difference(im1, im2)).mean() / self.WHITE
 
     def modify_im(self, im, percent_done: float) -> Image.Image:
         """general function to return modification of im"""
