@@ -2,6 +2,7 @@ import os
 import json
 import random
 import numpy as np
+from math import log2
 import datetime as dt
 from time import perf_counter
 import matplotlib.pyplot as plt
@@ -26,6 +27,11 @@ class HillClimbingArtist(object):
 
         self.im_generated: Image.Image = None
 
+        # climbing gif settings
+        self._record_im_generated_gif: bool = False
+        self._gif_path: str = ''
+        self._progress_ims: list = []
+
         # generation params
         self.set_seed()
         self.max_iterations = 10_000
@@ -38,6 +44,8 @@ class HillClimbingArtist(object):
         self.shape_center_choice_method = 'uniform'
         self.use_edge_attraction = False  # whether to make shape placement more likely in more different pixels
         self.edge_probability_weight = 0.7  # ignored if self.use_edge_attraction == False
+        self.color_epsilon = 0
+        self.epsilon = 0
 
         # result data
         self.climbing_seconds = None
@@ -49,6 +57,12 @@ class HillClimbingArtist(object):
         self.difference_list = None
         self.guess_difference_list = None
         self.good_guess_percent_list = None
+
+    def save_climbing_gif(self, path: str):
+        """Generates gif of climbing and saves to path.
+        Must be called before climb()"""
+        self._record_im_generated_gif = True
+        self._gif_path = path
 
     def set_seed(self, seed: int = None):
         if seed is not None: self.seed = seed
@@ -123,28 +137,39 @@ class HillClimbingArtist(object):
         assert im1.size == im2.size
         return np.asarray(ImageChops.difference(im1, im2)).mean() / self.WHITE
 
-    def modify_im(self, im, percent_done: float) -> Image.Image:
+    def modify_im(self, im, percent_done: float) -> [Image.Image, float]:
         """general function to return modification of im"""
         alpha = self.alpha(percent_done,
                            func=self.alpha_func,
                            stretch=self.alpha_stretch)
 
         xy = self.choose_xy(alpha, how=self.shape_center_choice_method)
-        fill_color = self.choose_color(alpha=alpha, color_mode=self.color_mode)
+        fill_color = self.choose_color(alpha=alpha, color_mode=self.color_mode) #, xy=xy)
 
         # draw shape
         im_compare = ImageChops.duplicate(im)
         draw = ImageDraw.Draw(im_compare)
         draw.ellipse(xy=xy, fill=fill_color)
+        # pie_start = random.randint(0, 360)
+        # pie_min_angle = int(alpha * 35)
+        # pie_max_angle = int(alpha * 40 + 50)
+        # draw.pieslice(xy=xy, start=pie_start,
+        #               end=(pie_start+random.randint(2, 65)),
+        #               fill=fill_color)
+        return im_compare, xy
 
-        return im_compare
-
-    def choose_color(self, alpha: float, color_mode: str = 'L', color_range_step: int = 1):
+    def choose_color(self, alpha: float, color_mode: str = 'L', color_range_step: int = 1, xy=None):
         c = None
-        if color_mode == 'L':
-            c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
+        if xy is not None:
+            if random.random() < self.color_epsilon:
+                c = int(np.asarray(self.im_target)[int((xy[0][1] + xy[1][1]) / 2) - 1][int((xy[0][0] + xy[1][0]) / 2) - 1])
+            else:
+                c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
         else:
-            raise NotImplementedError(f'{color_mode} color mode not implemented')
+            if color_mode == 'L':
+                c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
+            else:
+                raise NotImplementedError(f'{color_mode} color mode not implemented')
         return c
 
     def choose_xy(self, alpha: float, how: str = 'uniform') -> tuple:
@@ -186,8 +211,14 @@ class HillClimbingArtist(object):
         # circle_center_x = center_indx % self.x_max
         # circle_center_y = center_indx // self.x_max
 
-    def climb(self, print_output: bool = True):
+    def climb(self, print_output: bool = True, display_output: bool = False):
         assert self.im_target is not None
+
+        imshow_args = {}
+        if display_output and self.color_mode == 'L':
+            plt.ion()
+            imshow_args = {'cmap': 'gray', 'vmin': 0, 'vmax': 255}
+
         # blank starting image
         self.im_generated = Image.new(self.color_mode, self.im_target.size, self.WHITE)
         diff_generated_init = self.find_img_diff_pct(self.im_generated, self.im_target)
@@ -210,11 +241,22 @@ class HillClimbingArtist(object):
             percent_done = epoch / self.max_iterations
 
             # generate random modification
-            im_compare = self.modify_im(im=self.im_generated, percent_done=percent_done)
+            im_compare, xy = self.modify_im(im=self.im_generated, percent_done=percent_done)
+
+            # append to progress im list
+            if (self._record_im_generated_gif and
+                ((int(log2(epoch + 1)) == log2(epoch + 1) and epoch < 1_024) or
+                 (epoch % 1_000 == 0 and epoch >= 1_024))):
+                self._progress_ims.append(im_compare.resize([320, 238]).convert('P'))
+
             # difference of new pic with random shape
             diff_compare = self.find_img_diff_pct(self.im_target, im_compare)
 
-            if diff_compare < diff_generated:
+            # let epsilon vary with shape top left corner
+            # dist = np.sqrt((xy[0][0] / self.x_max)**2 + (xy[0][1] / self.y_max)**2) / np.sqrt(2)
+            dist = 1
+
+            if diff_compare < diff_generated * (1 + self.epsilon * dist):
                 self.im_generated = ImageChops.duplicate(im_compare)
                 diff_generated = diff_compare
                 good_guesses += 1
@@ -227,6 +269,22 @@ class HillClimbingArtist(object):
             diff_list.append(diff_generated)
             guess_diff_list.append(diff_compare)
             good_guess_pct_list.append(good_guesses / (epoch + 1))
+
+            if display_output and epoch % 100 == 0:
+                fig, ax = plt.subplots(2, 1, num=1, width_ratios=[1], height_ratios=[3, 1])
+                ax[0].imshow(im_compare, **imshow_args)
+                # plt.imshow(im_compare, **imshow_args)
+
+                x = np.arange(epoch)
+                ax[1].plot(x, good_guess_pct_list, label='good guess %')
+                ax[1].plot(x, guess_diff_list, label='guess difference')
+                ax[1].set_yscale('log')
+                ax[1].set_xlabel('Epoch')
+                fig.legend()
+
+                plt.show()
+                plt.pause(0.0001)
+                plt.clf()
 
         t1 = perf_counter()
         self.climbing_seconds = t1 - t0
@@ -245,6 +303,16 @@ class HillClimbingArtist(object):
             print(f'Good guess percent: {self.good_guesses / self.iteration_epochs}')
             print(f'Total time: {round(self.climbing_seconds / 60, 2)} min')
             print(f'Average of {round(self.climbing_seconds / self.iteration_epochs, 5)} sec / guess')
+
+        if self._record_im_generated_gif:
+            self._progress_ims[0].save(
+                self._gif_path, save_all=True,
+                append_images=self._progress_ims[1:],
+                optimize=True, duration=40, loop=0
+            )
+
+        if display_output:
+            plt.ioff()
 
     def plot_climb_stats(self, save: bool = False, dir: str = None):
         assert self.im_generated is not None
@@ -306,16 +374,22 @@ def main():
     hca = HillClimbingArtist()
     hca.max_iterations = 100_000
     hca.set_seed(2023)
+    hca.start_radius = 100
+    hca.end_radius = 4
+    hca.alpha_stretch = 400
+    # hca.color_epsilon = 1
+    # hca.epsilon = 0.001
     # print(hca.params)
 
     hca.load_target_image(target_image_path)
 
-    hca.climb()
+    # hca.save_climbing_gif('images/anothertest.gif')
+    hca.climb(print_output=True, display_output=True)
 
     hca.im_generated.show()
     ImageChops.difference(hca.im_target, hca.im_generated).show()
 
-    hca.save(dir='images', im_name='jimi', include_plot=True)
+    # hca.save(dir='images', im_name='jimi', include_plot=True)
 
     hca.plot_climb_stats()
 
