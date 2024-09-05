@@ -21,11 +21,23 @@ class HillClimbingArtist(object):
         self.path_target = None
         self.im_target: Image.Image = None
         self.num_pixels = None
+        self.num_climb_pixels = None
         self.x_max = None
         self.y_max = None
-        self.color_mode = 'L'
+        self.color_mode = None
+        self.channels_to_climb = None
+        self.color_dims = None
+        self.climb_dims = None
 
-        self.im_generated: Image.Image = None
+        # self.im_generated: Image.Image = None
+        self.im_climbed: Image.Image = None
+
+        self.np_target = None
+        self.np_target_climb = None
+        self.np_target_dont_climb = None
+
+        self.im_target_climb = None
+        self.im_target_dont_climb = None
 
         # climbing gif settings
         self._record_im_generated_gif: bool = False
@@ -57,6 +69,10 @@ class HillClimbingArtist(object):
         self.difference_list = None
         self.guess_difference_list = None
         self.good_guess_percent_list = None
+
+    @property
+    def im_generated(self):
+        return ImageChops.add(self.im_climbed, self.im_target_dont_climb).convert('RGB')
 
     def save_climbing_gif(self, path: str):
         """Generates gif of climbing and saves to path.
@@ -128,14 +144,19 @@ class HillClimbingArtist(object):
 
     def load_target_image(self, path_target: str):
         self.im_target = Image.open(path_target)
-        if self.color_mode is not None: self.im_target = self.im_target.convert(self.color_mode)
+        if self.color_mode is not None:
+            self.im_target = self.im_target.convert(self.color_mode)
+        else:
+            self.color_mode = self.im_target.mode
         self.num_pixels = np.ones(self.im_target.size).size
         self.x_max = self.im_target.size[0]
         self.y_max = self.im_target.size[1]
 
-    def find_img_diff_pct(self, im1: Image.Image, im2: Image.Image) -> float:
+        self.np_target = np.array(self.im_target)
+
+    def find_img_diff_pct(self, im1: Image.Image, im2: Image.Image, scale: float = 1) -> float:
         assert im1.size == im2.size
-        return np.asarray(ImageChops.difference(im1, im2)).mean() / self.WHITE
+        return np.asarray(ImageChops.difference(im1, im2)).mean() / (self.WHITE * scale)
 
     def modify_im(self, im, percent_done: float) -> [Image.Image, float]:
         """general function to return modification of im"""
@@ -159,17 +180,19 @@ class HillClimbingArtist(object):
         return im_compare, xy
 
     def choose_color(self, alpha: float, color_mode: str = 'L', color_range_step: int = 1, xy=None):
-        c = None
-        if xy is not None:
-            if random.random() < self.color_epsilon:
-                c = int(np.asarray(self.im_target)[int((xy[0][1] + xy[1][1]) / 2) - 1][int((xy[0][0] + xy[1][0]) / 2) - 1])
-            else:
-                c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
-        else:
-            if color_mode == 'L':
-                c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
-            else:
-                raise NotImplementedError(f'{color_mode} color mode not implemented')
+        # todo: implement chosing using center of circle color
+        # if xy is not None:
+        #     if random.random() < self.color_epsilon:
+        #         c = int(np.asarray(self.im_target)[int((xy[0][1] + xy[1][1]) / 2) - 1][int((xy[0][0] + xy[1][0]) / 2) - 1])
+        #     else:
+        #         c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
+        # else:
+        #     if color_mode == 'L':
+        #         c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
+        #     else:
+        #         raise NotImplementedError(f'{color_mode} color mode not implemented')
+        c = tuple(random.randrange(self.BLACK, self.WHITE, color_range_step)
+                  if d else 0 for d in self.channels_to_climb)
         return c
 
     def choose_xy(self, alpha: float, how: str = 'uniform') -> tuple:
@@ -211,17 +234,55 @@ class HillClimbingArtist(object):
         # circle_center_x = center_indx % self.x_max
         # circle_center_y = center_indx // self.x_max
 
-    def climb(self, print_output: bool = True, display_output: bool = False):
-        assert self.im_target is not None
+    def reset_default_channels_to_climb(self):
+        # todo: make dynamic
+        self.channels_to_climb = np.array((True, True, True))
 
-        imshow_args = {}
-        if display_output and self.color_mode == 'L':
-            plt.ion()
-            imshow_args = {'cmap': 'gray', 'vmin': 0, 'vmax': 255}
+    def climb_setup(self):
+        assert self.im_target is not None
+        if self.channels_to_climb is None:
+            self.reset_default_channels_to_climb()
+        self.color_dims = self.channels_to_climb.size
+        self.climb_dims = self.channels_to_climb.sum()
+        self.num_climb_pixels = np.prod(self.im_target.size) * self.climb_dims
+
+        self.np_target_climb = self.np_target.copy()
+        self.np_target_dont_climb = self.np_target.copy()
+        if self.channels_to_climb.size != 1:
+            self.np_target_climb[:,:,~self.channels_to_climb] = 0
+            self.np_target_dont_climb[:,:,self.channels_to_climb] = 0
+        else:
+            self.np_target_dont_climb = np.zeros(
+                self.np_target_dont_climb.shape,
+                dtype=self.np_target.dtype
+            )
+
+        self.im_target_climb = Image.fromarray(self.np_target_climb)
+        self.im_target_dont_climb = Image.fromarray(self.np_target_dont_climb)
 
         # blank starting image
-        self.im_generated = Image.new(self.color_mode, self.im_target.size, self.WHITE)
-        diff_generated_init = self.find_img_diff_pct(self.im_generated, self.im_target)
+        self.im_climbed = Image.new(
+            mode=self.color_mode,
+            size=self.im_target.size,
+            # todo: allow white starting background
+            color=tuple(self.BLACK for _ in range(self.color_dims))
+        )
+
+    def climb(self, print_output: bool = True, display_output: bool = False):
+        self.climb_setup()
+
+        if display_output:
+            plt.ion()
+
+        imshow_args = {}
+        if self.color_mode == 'L':
+            imshow_args = {'cmap': 'gray', 'vmin': 0, 'vmax': 255}
+
+        diff_generated_init = self.find_img_diff_pct(
+            ImageChops.add(self.im_climbed, self.im_target_dont_climb),
+            self.im_target,
+            scale=(self.num_climb_pixels / self.num_pixels)
+        )
         diff_generated = diff_generated_init
 
         # print output either 20 times or at least every 2500 epochs
@@ -241,23 +302,32 @@ class HillClimbingArtist(object):
             percent_done = epoch / self.max_iterations
 
             # generate random modification
-            im_compare, xy = self.modify_im(im=self.im_generated, percent_done=percent_done)
+            im_compare, xy = self.modify_im(im=self.im_climbed, percent_done=percent_done)
 
             # append to progress im list
             if (self._record_im_generated_gif and
                 ((int(log2(epoch + 1)) == log2(epoch + 1) and epoch < 1_024) or
                  (epoch % 1_000 == 0 and epoch >= 1_024))):
-                self._progress_ims.append(im_compare.resize([320, 238]).convert('P'))
+                self._progress_ims.append(
+                    ImageChops.add(im_compare, self.im_target_dont_climb)
+                              .resize((self.im_target.size[0] // 3,
+                                       self.im_target.size[1] // 3))
+                              .convert('P')
+                )
 
             # difference of new pic with random shape
-            diff_compare = self.find_img_diff_pct(self.im_target, im_compare)
+            diff_compare = self.find_img_diff_pct(
+                ImageChops.add(im_compare, self.im_target_dont_climb),
+                self.im_target,
+                scale=(self.num_climb_pixels / self.num_pixels)
+            )
 
             # let epsilon vary with shape top left corner
             # dist = np.sqrt((xy[0][0] / self.x_max)**2 + (xy[0][1] / self.y_max)**2) / np.sqrt(2)
             dist = 1
 
-            if diff_compare < diff_generated * (1 + self.epsilon * dist):
-                self.im_generated = ImageChops.duplicate(im_compare)
+            if diff_compare < diff_generated: # * (1 + self.epsilon * dist):
+                self.im_climbed = ImageChops.duplicate(im_compare)
                 diff_generated = diff_compare
                 good_guesses += 1
 
@@ -272,8 +342,8 @@ class HillClimbingArtist(object):
 
             if display_output and epoch % 100 == 0:
                 fig, ax = plt.subplots(2, 1, num=1, width_ratios=[1], height_ratios=[3, 1])
-                ax[0].imshow(im_compare, **imshow_args)
-                # plt.imshow(im_compare, **imshow_args)
+                im_to_show = np.array(ImageChops.add(im_compare, self.im_target_dont_climb).convert('RGB'))
+                ax[0].imshow(im_to_show, **imshow_args)
 
                 x = np.arange(epoch)
                 ax[1].plot(x, good_guess_pct_list, label='good guess %')
@@ -372,14 +442,15 @@ def main():
     target_image_path = 'images/Jimi_Hendrix_1967_uncropped.jpg'
 
     hca = HillClimbingArtist()
-    hca.max_iterations = 100_000
+
+    hca.max_iterations = 10_000
     hca.set_seed(2023)
     hca.start_radius = 100
-    hca.end_radius = 4
-    hca.alpha_stretch = 400
-    # hca.color_epsilon = 1
-    # hca.epsilon = 0.001
-    # print(hca.params)
+    hca.end_radius = 18
+    hca.alpha_stretch = 80
+
+    hca.color_mode = 'HSV'
+    hca.channels_to_climb = np.array((True, False, False))
 
     hca.load_target_image(target_image_path)
 
