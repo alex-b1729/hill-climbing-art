@@ -235,8 +235,11 @@ class HillClimbingArtist(object):
         # circle_center_y = center_indx // self.x_max
 
     def reset_default_channels_to_climb(self):
-        # todo: make dynamic
-        self.channels_to_climb = np.array((True, True, True))
+        ndims = self.np_target.ndim
+        if ndims == 2:
+            self.channels_to_climb = np.array([True])
+        else:
+            self.channels_to_climb = np.array(tuple(True for _ in range(ndims)))
 
     def climb_setup(self):
         assert self.im_target is not None
