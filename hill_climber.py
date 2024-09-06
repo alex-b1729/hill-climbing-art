@@ -72,7 +72,10 @@ class HillClimbingArtist(object):
 
     @property
     def im_generated(self):
-        return ImageChops.add(self.im_climbed, self.im_target_dont_climb).convert('RGB')
+        if self.color_mode == 'L':
+            return ImageChops.add(self.im_climbed, self.im_target_dont_climb)
+        else:
+            return ImageChops.add(self.im_climbed, self.im_target_dont_climb).convert('RGB')
 
     def save_climbing_gif(self, path: str):
         """Generates gif of climbing and saves to path.
@@ -142,12 +145,15 @@ class HillClimbingArtist(object):
         with open(path, mode='w') as f:
             f.write(json.dumps(self.metadata, indent=4))
 
-    def load_target_image(self, path_target: str):
+    def load_target_image(self, path_target: str, resize_mult: float = 1):
         self.im_target = Image.open(path_target)
         if self.color_mode is not None:
             self.im_target = self.im_target.convert(self.color_mode)
         else:
             self.color_mode = self.im_target.mode
+        if resize_mult != 1:
+            new_sz = int(self.im_target.size[0] * resize_mult), int(self.im_target.size[1] * resize_mult)
+            self.im_target = self.im_target.resize(new_sz)
         self.num_pixels = np.ones(self.im_target.size).size
         self.x_max = self.im_target.size[0]
         self.y_max = self.im_target.size[1]
@@ -309,12 +315,12 @@ class HillClimbingArtist(object):
 
             # append to progress im list
             if (self._record_im_generated_gif and
-                ((int(log2(epoch + 1)) == log2(epoch + 1) and epoch < 1_024) or
-                 (epoch % 1_000 == 0 and epoch >= 1_024))):
+                ((int(log2(epoch + 1)) == log2(epoch + 1) and epoch < 2_048) or
+                 (epoch % 2_000 == 0 and epoch >= 2_048))):
                 self._progress_ims.append(
                     ImageChops.add(im_compare, self.im_target_dont_climb)
-                              .resize((self.im_target.size[0] // 3,
-                                       self.im_target.size[1] // 3))
+                              .resize((self.im_target.size[0] // 2,
+                                       self.im_target.size[1] // 2))
                               .convert('P')
                 )
 
@@ -345,7 +351,9 @@ class HillClimbingArtist(object):
 
             if display_output and epoch % 100 == 0:
                 fig, ax = plt.subplots(2, 1, num=1, width_ratios=[1], height_ratios=[3, 1])
-                im_to_show = np.array(ImageChops.add(im_compare, self.im_target_dont_climb).convert('RGB'))
+                sz_ratio = im_compare.size[0] / im_compare.size[1]
+                im_to_show = np.array(ImageChops.add(im_compare, self.im_target_dont_climb)
+                                      .convert('RGB').resize((int(200 * sz_ratio), 200)))
                 ax[0].imshow(im_to_show, **imshow_args)
 
                 x = np.arange(epoch)
@@ -381,7 +389,7 @@ class HillClimbingArtist(object):
             self._progress_ims[0].save(
                 self._gif_path, save_all=True,
                 append_images=self._progress_ims[1:],
-                optimize=True, duration=40, loop=0
+                optimize=True, duration=60, loop=0
             )
 
         if display_output:
