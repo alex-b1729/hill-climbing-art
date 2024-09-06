@@ -8,11 +8,19 @@ Target image [source](https://commons.wikimedia.org/wiki/File:Jimi_Hendrix_1967_
 
 ![Gif of climbing progress](https://imgur.com/1cHnQ4F.gif)
 
+## Contents
+- [Overview](#overview)
+- [Examples](#examples)
+- [Color Modes](#color-modes)
+    - [Using specific color channels](#using-specific-color-channels)
+- [Other Settings](#other-settings)
+- [Future Improvements](#future-improvements)
+
 ## Overview
 The script starts with a blank generated image and a given target image. 
 At each epoch it
 1. Draws a random circle on the generated image
-2. Calculates the difference between the generated image with the new random circle to the target image
+2. Calculates the difference between the generated image with the new random circle and the target image
 3. Either:  
     a. Keeps the new circle if it decreases the difference  
     b. Discards the new circle otherwise
@@ -74,10 +82,17 @@ hca.channels_to_climb = np.array((True, True, False))  # estimate H, S but not V
 ![HS Python generation](./images/python_hill_climbing_HS.jpg)
 
 ## Other Settings
-- asdf
-- jkl
+- `channels_to_climb`: a Numpy array of bool indicating which color channels the algo should use. 
+For example `channels_to_climb = np.array((True, False, False))` with the RGB color mode means the algo will only estimate the red channel. 
+- `set_seed(seed: int)` sets the seed. 
+Each `HillClimbingArtist` class instance is initiated with a random seed which you can access with the `seed` attribute. 
+- `target_difference_percent`: if set the algo will run until the difference is less that this value. 
+- `start_radius`, `end_radius`: the starting and ending radius of random the circles. 
+- `radius_percent_variance`: float in [0, 1), default 0.2. Each circle radius varies by up to 1+/- this amount. 
+- `alpha_func` - `string`: the function controlling how the circle radius decreases with epochs. 
+Options are `loglike` (default), `sigmoid`, `linear`. 
 
-## Future improvements
+## Future Improvements
 - [ ] Shapes besides circles
 - [ ] Allow for approximating each channel separately
 - [x] Colored images
