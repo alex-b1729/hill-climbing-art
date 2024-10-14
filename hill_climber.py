@@ -27,6 +27,7 @@ class HillClimbingArtist(object):
         self.color_mode = None
         self._has_transparency_data = None
         self.channels_to_climb = None
+        self.color_choice = 'random'
         self.color_dims = None
         self.climb_dims = None
 
@@ -216,8 +217,16 @@ class HillClimbingArtist(object):
         #         c = random.randrange(self.BLACK, self.WHITE + 1, color_range_step)
         #     else:
         #         raise NotImplementedError(f'{color_mode} color mode not implemented')
-        c = tuple(random.randrange(self.BLACK, self.WHITE, color_range_step)
-                  if d else 0 for d in self.channels_to_climb)
+        c = None
+        if self.color_choice == 'random':
+            c = tuple(random.randrange(self.BLACK, self.WHITE, color_range_step)
+                      if d else 0 for d in self.channels_to_climb)
+        elif self.color_choice == 'target_palette':
+            x = random.randrange(self.num_pixels)
+            c = tuple(self.np_target[x // self.x_max, x % self.x_max])
+            # c = (c_img[i] if d
+            #      else random.randrange(self.BLACK, self.WHITE, color_range_step)
+            #      for i, d in enumerate(self.channels_to_climb))
         return c
 
     def choose_xy(self, alpha: float, how: str = 'uniform') -> tuple:
@@ -478,7 +487,8 @@ def main():
     hca.end_radius = 3
     hca.alpha_stretch = 300
 
-    hca.color_mode = 'LA'
+    hca.color_mode = 'RGB'
+    hca.color_choice = 'target_palette'
     # hca.channels_to_climb = np.array((True, False, False))
 
     hca.load_target_image(target_image_path)
