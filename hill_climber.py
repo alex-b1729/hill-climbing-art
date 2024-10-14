@@ -25,6 +25,7 @@ class HillClimbingArtist(object):
         self.x_max = None
         self.y_max = None
         self.color_mode = None
+        self._has_transparency_data = None
         self.channels_to_climb = None
         self.color_dims = None
         self.climb_dims = None
@@ -145,12 +146,17 @@ class HillClimbingArtist(object):
         with open(path, mode='w') as f:
             f.write(json.dumps(self.metadata, indent=4))
 
+    @property
+    def has_transparency_data(self):
+        return self._has_transparency_data
+
     def load_target_image(self, path_target: str, resize_mult: float = 1):
         self.im_target = Image.open(path_target)
         if self.color_mode is not None:
             self.im_target = self.im_target.convert(self.color_mode)
         else:
             self.color_mode = self.im_target.mode
+        self._has_transparency_data = self.im_target.has_transparency_data
         if resize_mult != 1:
             new_sz = int(self.im_target.size[0] * resize_mult), int(self.im_target.size[1] * resize_mult)
             self.im_target = self.im_target.resize(new_sz)
@@ -174,9 +180,22 @@ class HillClimbingArtist(object):
         fill_color = self.choose_color(alpha=alpha, color_mode=self.color_mode) #, xy=xy)
 
         # draw shape
-        im_compare = ImageChops.duplicate(im)
-        draw = ImageDraw.Draw(im_compare)
-        draw.ellipse(xy=xy, fill=fill_color)
+        if self.has_transparency_data:
+            im_shape = Image.new(
+                self.color_mode,
+                self.im_target.size,
+                tuple(self.BLACK for _ in range(self.np_target.shape[2])),
+            )
+            draw = ImageDraw.Draw(im_shape)
+            draw.ellipse(xy=xy, fill=fill_color)
+            if self.color_mode == 'RGBA':
+                im_compare = Image.alpha_composite(im, im_shape)
+            else:
+                im_compare = Image.alpha_composite(im.convert('RGBA'), im_shape.convert('RGBA')).convert(self.color_mode)
+        else:
+            im_compare = ImageChops.duplicate(im)
+            draw = ImageDraw.Draw(im_compare)
+            draw.ellipse(xy=xy, fill=fill_color)
         # pie_start = random.randint(0, 360)
         # pie_min_angle = int(alpha * 35)
         # pie_max_angle = int(alpha * 40 + 50)
@@ -283,7 +302,7 @@ class HillClimbingArtist(object):
             plt.ion()
 
         imshow_args = {}
-        if self.color_mode == 'L':
+        if self.color_mode.startswith('L'):
             imshow_args = {'cmap': 'gray', 'vmin': 0, 'vmax': 255}
 
         diff_generated_init = self.find_img_diff_pct(
@@ -453,14 +472,14 @@ def main():
 
     hca = HillClimbingArtist()
 
-    hca.max_iterations = 10_000
+    hca.max_iterations = 40_000
     hca.set_seed(2023)
-    hca.start_radius = 100
-    hca.end_radius = 18
-    hca.alpha_stretch = 80
+    hca.start_radius = 26
+    hca.end_radius = 3
+    hca.alpha_stretch = 300
 
-    hca.color_mode = 'HSV'
-    hca.channels_to_climb = np.array((True, False, False))
+    hca.color_mode = 'LA'
+    # hca.channels_to_climb = np.array((True, False, False))
 
     hca.load_target_image(target_image_path)
 
@@ -468,7 +487,8 @@ def main():
     hca.climb(print_output=True, display_output=True)
 
     hca.im_generated.show()
-    ImageChops.difference(hca.im_target, hca.im_generated).show()
+    # not working with transparency layer
+    # ImageChops.difference(hca.im_target, hca.im_generated).show()
 
     # hca.save(dir='images', im_name='jimi', include_plot=True)
 
