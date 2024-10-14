@@ -13,6 +13,8 @@ Target image [source](https://commons.wikimedia.org/wiki/File:Jimi_Hendrix_1967_
 - [Examples](#examples)
 - [Color Modes](#color-modes)
     - [Using specific color channels](#using-specific-color-channels)
+    - [Using the target image palette](#using-the-target-image-palette)
+    - [The alpha channel](#the-alpha-channel)
 - [Other Settings](#other-settings)
 - [Future Improvements](#future-improvements)
 
@@ -81,6 +83,21 @@ hca.channels_to_climb = np.array((True, True, False))  # estimate H, S but not V
 ```
 ![HS Python generation](./images/python_hill_climbing_HS.jpg)
 
+## Using the target image palette
+Setting `color_choice='target_palette'` means that the script will sample pixel colors from the target image. 
+I find this provides a nice balance for color images where choosing completely random colors generally doesn't look great. 
+
+![Wanderer above the Sea of Fog](./images/wanderer_above_the_sea_of_fog_color.jpg)
+
+[Original at Wikimedia commons](https://commons.wikimedia.org/wiki/File:Caspar_David_Friedrich_-_Wanderer_above_the_Sea_of_Fog.jpeg)
+
+## The alpha channel
+Choosing a color mode with an alpha channel means the shapes will have variable transparency which decreases the hard edges and looks cool for some target images. 
+
+__Note:__ 
+Currently if you set `color_choice='target_palette'` and use a color mode with an alpha channel the script won't add any alpha to the shapes unless the target image has some alpha. 
+I'd like to change this at some point. 
+
 ## Other Settings
 - `channels_to_climb`: a Numpy array of bool indicating which color channels the algo should use. 
 For example `channels_to_climb = np.array((True, False, False))` with the RGB color mode means the algo will only estimate the red channel. 
@@ -95,4 +112,5 @@ Options are `loglike` (default), `sigmoid`, `linear`.
 ## Future Improvements
 - [ ] Shapes besides circles
 - [ ] Allow for approximating each channel separately
+- [ ] Allow shapes with random alpha when using `color_choice = 'target_palette'`
 - [x] Colored images
