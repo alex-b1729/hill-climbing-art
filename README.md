@@ -94,9 +94,7 @@ I find this provides a nice balance for color images where choosing completely r
 ## The alpha channel
 Choosing a color mode with an alpha channel means the shapes will have variable transparency which decreases the hard edges and looks cool for some target images. 
 
-__Note:__ 
-Currently if you set `color_choice='target_palette'` and use a color mode with an alpha channel the script won't add any alpha to the shapes unless the target image has some alpha. 
-I'd like to change this at some point. 
+Set `random_alpha=True` to add an alpha channel to shapes when using `color_choice='target_palette'`.
 
 ## Other Settings
 - `channels_to_climb`: a Numpy array of bool indicating which color channels the algo should use. 
@@ -112,5 +110,5 @@ Options are `loglike` (default), `sigmoid`, `linear`.
 ## Future Improvements
 - [ ] Shapes besides circles
 - [ ] Allow for approximating each channel separately
-- [ ] Allow shapes with random alpha when using `color_choice = 'target_palette'`
+- [x] Allow shapes with random alpha when using `color_choice='target_palette'`
 - [x] Colored images
